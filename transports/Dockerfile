@@ -34,13 +34,12 @@
   
   COPY --from=ui-builder /app/out ./bifrost-http/ui
   
-  # Build the binary with CGO enabled and static SQLite linking
+  # Build the binary with CGO enabled and dynamic linking (supports .so plugins)
   ENV GOWORK=off
   ARG VERSION=unknown
   RUN go build \
-    -ldflags="-w -s -X main.Version=v${VERSION} -extldflags '-static'" \
+    -ldflags="-w -s -X main.Version=v${VERSION}" \
     -a -trimpath \
-    -tags "sqlite_static" \
     -o /app/main \
     ./bifrost-http
   
@@ -55,7 +54,7 @@
   # musl: C standard library (required for CGO binaries)
   # libgcc: GCC runtime library
   # ca-certificates: For HTTPS connections
-  RUN apk add --no-cache musl libgcc ca-certificates wget
+  RUN apk add --no-cache musl libgcc ca-certificates wget sqlite-libs
   
   # Create data directory and set up user
   COPY --from=builder /app/main .
