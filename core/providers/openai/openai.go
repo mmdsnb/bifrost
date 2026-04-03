@@ -1160,6 +1160,36 @@ func HandleOpenAIChatCompletionStreaming(
 				var bifrostErr schemas.BifrostError
 				if err := sonic.UnmarshalString(jsonData, &bifrostErr); err == nil {
 					if bifrostErr.Error != nil && bifrostErr.Error.Message != "" {
+						// Mid-stream error guard: if we already sent normal chunks,
+						// replace the error with a truncation notice instead of forwarding the raw error.
+						if chunkIndex >= 0 {
+							truncationMsg := fmt.Sprintf("\n\n[内容被截断，原因: %s]", bifrostErr.Error.Message)
+							chunkIndex++
+							truncationResp := &schemas.BifrostResponse{
+								ChatResponse: &schemas.BifrostChatResponse{
+									ID:     messageID,
+									Object: "chat.completion.chunk",
+									Model:  request.Model,
+									Choices: []schemas.BifrostResponseChoice{{
+										Index: 0,
+										ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
+											Delta: &schemas.ChatStreamResponseChoiceDelta{
+												Content: &truncationMsg,
+											},
+										},
+									}},
+									ExtraFields: schemas.BifrostResponseExtraFields{
+										RequestType:    streamRequestType,
+										Provider:       providerName,
+										ModelRequested: request.Model,
+										ChunkIndex:     chunkIndex,
+									},
+								},
+							}
+							ctx.SetValue(schemas.BifrostContextKeyStreamEndIndicator, true)
+							providerUtils.ProcessAndSendResponse(ctx, postHookRunner, truncationResp, responseChan)
+							return
+						}
 						bifrostErr.ExtraFields = schemas.BifrostErrorExtraFields{
 							Provider:       providerName,
 							ModelRequested: request.Model,
